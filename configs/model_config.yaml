@@ -1,0 +1,47 @@
+# ── Donut Vision Encoder ─────────────────────────────────────────────────────
+donut:
+  pretrained_model: "naver-clova-ix/donut-base"
+  input_size: [1280, 960]           # Height x Width
+  max_length: 768                   # Max output sequence length
+  align_long_axis: false
+  encoder_layer: -1                 # Use last encoder layer features
+
+# ── BiLSTM + CTC Decoder ────────────────────────────────────────────────────
+bilstm:
+  input_dim: 1024                   # Feature dim from Donut encoder
+  hidden_size: 256
+  num_layers: 2
+  dropout: 0.3
+  bidirectional: true
+  output_projection: true           # Project to vocab size
+
+ctc:
+  blank_token_id: 0
+  beam_width: 10                    # For beam search decoding
+  use_word_beam_search: true
+
+# ── Medical BERT NER ─────────────────────────────────────────────────────────
+medical_bert:
+  pretrained_model: "microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract"
+  max_seq_length: 256
+  num_labels: 11                    # BIO tags: O, B-MED, I-MED, B-DOS, I-DOS, B-FREQ, I-FREQ, B-DUR, I-DUR, B-INST, I-INST
+  label_map:
+    O: 0
+    B-MEDICINE: 1
+    I-MEDICINE: 2
+    B-DOSAGE: 3
+    I-DOSAGE: 4
+    B-FREQUENCY: 5
+    I-FREQUENCY: 6
+    B-DURATION: 7
+    I-DURATION: 8
+    B-INSTRUCTION: 9
+    I-INSTRUCTION: 10
+
+# ── Vocabulary ───────────────────────────────────────────────────────────────
+vocabulary:
+  charset: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .,;:!?-/()'\"@#%&+=[]{}|\\<>$^*~`_"
+  vocab_size: 95                    # Length of charset + blank + padding
+  blank_token: "<blank>"
+  pad_token: "<pad>"
+  unk_token: "<unk>"

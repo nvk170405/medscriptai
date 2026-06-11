@@ -1,0 +1,48 @@
+# ── Deployment Config ────────────────────────────────────────────────────────
+
+# ── Inference ────────────────────────────────────────────────────────────────
+inference:
+  device: "cpu"                     # "cpu" or "cuda"
+  batch_size: 1
+  max_image_size: 1280
+  confidence_threshold: 0.5         # Flag words below this for human review
+  use_word_beam_search: true
+  beam_width: 10
+
+# ── Model Paths ──────────────────────────────────────────────────────────────
+models:
+  donut_bilstm_checkpoint: "checkpoints/donut_bilstm_best.ckpt"
+  medical_bert_checkpoint: "checkpoints/medical_bert_best.ckpt"
+  onnx_model_path: "checkpoints/medscript.onnx"   # Phase 2
+
+# ── API ──────────────────────────────────────────────────────────────────────
+api:
+  host: "0.0.0.0"
+  port: 8000
+  workers: 4
+  reload: false                     # true for dev
+  cors_origins:
+    - "http://localhost:3000"       # Next.js dev server
+    - "https://medscript.ai"       # Production
+  max_upload_size_mb: 10
+  rate_limit:
+    requests_per_minute: 60
+    burst: 10
+
+# ── Cache ────────────────────────────────────────────────────────────────────
+cache:
+  enabled: true
+  ttl_seconds: 3600                 # 1 hour
+  max_entries: 10000
+
+# ── Storage ──────────────────────────────────────────────────────────────────
+storage:
+  backend: "local"                  # "local", "s3", "minio"
+  local_path: "data/uploads"
+  s3_bucket: "medscript-data"
+
+# ── Monitoring ───────────────────────────────────────────────────────────────
+monitoring:
+  prometheus_enabled: true
+  prometheus_port: 9090
+  health_check_interval_seconds: 30

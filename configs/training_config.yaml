@@ -1,0 +1,82 @@
+# ── General ──────────────────────────────────────────────────────────────────
+experiment_name: "medscript-v1"
+seed: 42
+deterministic: true
+
+# ── Data ─────────────────────────────────────────────────────────────────────
+data:
+  train_split: 0.8
+  val_split: 0.1
+  test_split: 0.1
+  num_workers: 4
+  pin_memory: true
+  prefetch_factor: 2
+
+# ── Training (Donut + BiLSTM-CTC) ───────────────────────────────────────────
+training:
+  # Batch & epochs — small batch due to Colab T4 (16GB VRAM)
+  batch_size: 2
+  max_epochs: 50
+  gradient_accumulation_steps: 8    # Effective batch = 2 * 8 = 16
+  gradient_clip_val: 5.0
+
+  # Optimizer
+  optimizer: "adamw"
+  learning_rate: 3.0e-5             # Donut encoder LR
+  bilstm_learning_rate: 1.0e-4      # BiLSTM decoder LR
+  weight_decay: 0.01
+  betas: [0.9, 0.999]
+  eps: 1.0e-8
+
+  # Scheduler
+  scheduler: "cosine_warmup"
+  warmup_steps: 500
+  min_learning_rate: 1.0e-6
+
+  # Mixed precision (critical for Colab T4)
+  precision: "16-mixed"
+
+  # Early stopping
+  early_stopping:
+    monitor: "val/wer"
+    patience: 5
+    mode: "min"
+    min_delta: 0.001
+
+  # Checkpointing
+  checkpoint:
+    monitor: "val/wer"
+    mode: "min"
+    save_top_k: 3
+    save_last: true
+    dirpath: "checkpoints/"
+
+# ── Training (Medical BERT NER) ─────────────────────────────────────────────
+ner_training:
+  batch_size: 16                    # Smaller model, can use larger batch
+  max_epochs: 20
+  learning_rate: 2.0e-5
+  weight_decay: 0.01
+  warmup_ratio: 0.1
+  precision: "16-mixed"
+
+# ── Curriculum Learning ─────────────────────────────────────────────────────
+curriculum:
+  enabled: true
+  stages:
+    - name: "easy"
+      epochs: [0, 10]
+      augmentation_level: "light"
+    - name: "medium"
+      epochs: [10, 30]
+      augmentation_level: "medium"
+    - name: "hard"
+      epochs: [30, 50]
+      augmentation_level: "heavy"
+
+# ── Logging ──────────────────────────────────────────────────────────────────
+logging:
+  log_every_n_steps: 10
+  val_check_interval: 0.5          # Validate every half epoch
+  use_mlflow: true
+  use_tensorboard: false

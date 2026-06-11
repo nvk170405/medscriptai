@@ -1,0 +1,118 @@
+# =============================================================================
+# MedScript AI — Docker Compose (Local Development)
+# =============================================================================
+
+services:
+  # ── FastAPI Backend ──────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: medscript-api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./src:/app/src
+      - ./api:/app/api
+      - ./configs:/app/configs
+      - ./checkpoints:/app/checkpoints
+      - ./data/uploads:/app/data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_started
+    restart: unless-stopped
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # ── Celery Worker ────────────────────────────────────────────────────────
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: medscript-worker
+    env_file:
+      - .env
+    volumes:
+      - ./src:/app/src
+      - ./api:/app/api
+      - ./configs:/app/configs
+      - ./checkpoints:/app/checkpoints
+    depends_on:
+      - api
+      - redis
+    restart: unless-stopped
+    command: celery -A api.workers.celery_tasks worker --loglevel=info --concurrency=2
+
+  # ── PostgreSQL ───────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: medscript-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: medscript
+      POSTGRES_USER: medscript
+      POSTGRES_PASSWORD: medscript_dev_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U medscript"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── MongoDB ──────────────────────────────────────────────────────────────
+  mongodb:
+    image: mongo:7
+    container_name: medscript-mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: medscript
+      MONGO_INITDB_ROOT_PASSWORD: medscript_dev_password
+      MONGO_INITDB_DATABASE: medscript
+    volumes:
+      - mongo_data:/data/db
+    restart: unless-stopped
+
+  # ── Redis ────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: medscript-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── MinIO (S3-compatible storage) ────────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    container_name: medscript-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  mongo_data:
+  redis_data:
+  minio_data:
