@@ -147,10 +147,7 @@ Since no local GPU is available, training is done via Google Colab:
 | Storage | MinIO (S3-compatible) |
 | Training | PyTorch Lightning + Google Colab |
 
-## License
-
-MIT License — see [LICENSE](LICENSE) for details.
 
 ## Author
 
-**Navketan Singh** — Delhi, India
+**Navketan Singh** 
