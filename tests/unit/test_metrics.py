@@ -23,7 +23,8 @@ class TestWER:
         assert wer > 0.0
 
     def test_empty_reference(self) -> None:
-        assert word_error_rate(["hello"], [""]) == 0.0  # Division by max(0,1)
+        # pred has 1 word, ref has 0 → edit distance=1, total=max(0,1)=1 → WER=1.0
+        assert word_error_rate(["hello"], [""]) == 1.0
 
     def test_partial_match(self) -> None:
         wer = word_error_rate(["hello world foo"], ["hello world"])

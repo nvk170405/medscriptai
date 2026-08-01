@@ -3,10 +3,13 @@ import { BrowserRouter, Routes, Route, Link, useLocation, Navigate } from 'react
 import { BackgroundShader } from './components/BackgroundShader';
 import { HeroSection } from './components/HeroSection';
 import { BentoDashboard } from './components/BentoDashboard';
+import { FeaturesAndFaq } from './components/FeaturesAndFaq';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import LoginPage from './pages/LoginPage';
 import TranscribePage from './pages/TranscribePage';
 import DashboardPage from './pages/DashboardPage';
+import CollectionPage from './pages/CollectionPage';
+import FeedbackPage from './pages/FeedbackPage';
 import { Shield, LogOut } from 'lucide-react';
 
 // ── Protected Route ──────────────────────────────────────────────────────────
@@ -36,6 +39,7 @@ function LandingPage() {
     <>
       <HeroSection />
       <BentoDashboard />
+      <FeaturesAndFaq />
     </>
   );
 }
@@ -59,12 +63,14 @@ function Navbar() {
         <span className="text-sm font-medium text-white hidden sm:inline">MedScript AI</span>
       </Link>
 
-      <div className="hidden md:flex items-center gap-6 bg-surface/50 backdrop-blur-md border border-white/5 px-6 py-2 rounded-full pointer-events-auto">
+      <div className="hidden md:flex items-center gap-5 bg-surface/50 backdrop-blur-md border border-white/5 px-5 py-2 rounded-full pointer-events-auto">
         <Link to="/" className={linkClass('/')}>Home</Link>
 
         {isAuthenticated ? (
           <>
             <Link to="/app" className={linkClass('/app')}>Transcribe</Link>
+            <Link to="/review" className={linkClass('/review')}>Review</Link>
+            <Link to="/collect" className={linkClass('/collect')}>Collect</Link>
             <Link to="/dashboard" className={linkClass('/dashboard')}>Dashboard</Link>
             <div className="w-px h-4 bg-white/10"></div>
             <span className="text-xs text-muted">{user?.username}</span>
@@ -135,6 +141,22 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <DashboardPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/review"
+                element={
+                  <ProtectedRoute>
+                    <FeedbackPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/collect"
+                element={
+                  <ProtectedRoute>
+                    <CollectionPage />
                   </ProtectedRoute>
                 }
               />

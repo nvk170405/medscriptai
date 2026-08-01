@@ -54,8 +54,10 @@ def deskew(image: np.ndarray, max_angle: float = 15.0) -> np.ndarray:
 
     # Calculate dominant angle
     angles = []
+    # Reshape handles both OpenCV 4.x (N,1,4) and 5.x (N,4) formats
+    lines = lines.reshape(-1, 4)
     for line in lines:
-        x1, y1, x2, y2 = line[0]
+        x1, y1, x2, y2 = line
         angle = np.degrees(np.arctan2(y2 - y1, x2 - x1))
         if abs(angle) < max_angle:  # Filter extreme angles
             angles.append(angle)

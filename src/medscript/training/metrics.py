@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-import editdistance
+from rapidfuzz.distance import Levenshtein
 import torch
 
 
@@ -21,7 +21,7 @@ def word_error_rate(predictions: list[str], references: list[str]) -> float:
     for pred, ref in zip(predictions, references):
         pred_words = pred.strip().split()
         ref_words = ref.strip().split()
-        total_errors += editdistance.eval(pred_words, ref_words)
+        total_errors += Levenshtein.distance(pred_words, ref_words)
         total_words += len(ref_words)
 
     return total_errors / max(total_words, 1)
@@ -37,7 +37,7 @@ def character_error_rate(predictions: list[str], references: list[str]) -> float
     total_chars = 0
 
     for pred, ref in zip(predictions, references):
-        total_errors += editdistance.eval(list(pred), list(ref))
+        total_errors += Levenshtein.distance(list(pred), list(ref))
         total_chars += len(ref)
 
     return total_errors / max(total_chars, 1)

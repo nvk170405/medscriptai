@@ -201,3 +201,73 @@ export interface HealthResponse {
 export async function checkHealth(): Promise<HealthResponse> {
   return apiFetch<HealthResponse>('/health');
 }
+
+// ── Feedback endpoints ───────────────────────────────────────────────────────
+
+export interface FeedbackPayload {
+  transcription_id: string;
+  original_text: string;
+  corrected_text: string;
+  corrected_entities?: Array<{ type: string; value: string; confidence: number }>;
+  notes?: string;
+}
+
+export interface FeedbackItem {
+  id: string;
+  transcription_id: string;
+  user_id: string;
+  original_text: string;
+  corrected_text: string;
+  corrected_entities: Array<{ type: string; value: string; confidence: number }>;
+  notes: string;
+  created_at: string;
+}
+
+export interface FeedbackResponse {
+  feedback_id: string;
+  message: string;
+}
+
+export interface PendingFeedbackResponse {
+  pending: FeedbackItem[];
+  total: number;
+}
+
+export async function submitFeedback(payload: FeedbackPayload): Promise<FeedbackResponse> {
+  return apiFetch<FeedbackResponse>('/feedback', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function listPendingFeedback(): Promise<PendingFeedbackResponse> {
+  return apiFetch<PendingFeedbackResponse>('/feedback/pending');
+}
+
+// ── Collection endpoints ─────────────────────────────────────────────────────
+
+export interface CollectionUploadResponse {
+  collection_id: string;
+  message: string;
+}
+
+export interface CollectionStats {
+  total_images: number;
+  annotated: number;
+  pending_annotation: number;
+  contributors: number;
+}
+
+export async function uploadCollectionImage(file: File): Promise<CollectionUploadResponse> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  return apiFetch<CollectionUploadResponse>('/collect/upload', {
+    method: 'POST',
+    body: formData,
+  });
+}
+
+export async function getCollectionStats(): Promise<CollectionStats> {
+  return apiFetch<CollectionStats>('/collect/stats');
+}

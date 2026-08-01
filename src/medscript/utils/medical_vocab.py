@@ -156,14 +156,14 @@ def normalize_drug_name(name: str) -> str | None:
 
     Returns the canonical name if a close match is found, else None.
     """
-    import editdistance
+    from rapidfuzz.distance import Levenshtein
 
     name_lower = name.lower().strip()
     best_match: str | None = None
     best_distance = float("inf")
 
     for drug in DRUG_NAMES:
-        dist = editdistance.eval(name_lower, drug.lower())
+        dist = Levenshtein.distance(name_lower, drug.lower())
         # Allow up to 2 character edits for short names, 3 for longer
         max_dist = 2 if len(drug) <= 6 else 3
         if dist < best_distance and dist <= max_dist:
