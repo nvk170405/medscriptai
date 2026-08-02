@@ -106,7 +106,7 @@ def get_validation_transform(
             min_height=height,
             min_width=width,
             border_mode=cv2.BORDER_CONSTANT,
-            value=255,
+            fill=255,
         ),
         A.Normalize(
             mean=[0.485, 0.456, 0.406],

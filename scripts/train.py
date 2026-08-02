@@ -63,9 +63,10 @@ def generate_synthetic_data(num_samples: int, output_dir: Path) -> None:
         output_dir=str(output_dir),
         image_height=960,
         image_width=1280,
+        seed=42,
     )
     logger.info("generating_synthetic_data", num_samples=num_samples)
-    generator.generate_dataset(num_samples=num_samples, seed=42)
+    generator.generate_batch(count=num_samples)
     logger.info("synthetic_data_generated", output_dir=str(output_dir))
 
 
@@ -196,7 +197,7 @@ def main() -> None:
         val_check_interval=0.5,
         log_every_n_steps=10,
         callbacks=callbacks,
-        deterministic=True,
+        deterministic=False,
     )
 
     # Print training info

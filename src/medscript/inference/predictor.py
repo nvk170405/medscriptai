@@ -40,17 +40,34 @@ class MedScriptPredictor:
         self.confidence_threshold = confidence_threshold
 
         # Character mapping
-        if idx_to_char is None:
-            charset = (
-                "abcdefghijklmnopqrstuvwxyz"
-                "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-                "0123456789 .,;:!?-/()'\"@#%&+=[]{}|\\<>$^*~`_"
-            )
-            self.idx_to_char = {0: "", 1: "", 2: "?"}  # blank, pad, unk
-            for i, char in enumerate(charset, start=3):
-                self.idx_to_char[i] = char
-        else:
+        self.idx_to_char = {}
+        self.vocab_size = 95
+        if idx_to_char is not None:
             self.idx_to_char = idx_to_char
+            self.vocab_size = len(idx_to_char)
+        elif checkpoint_path:
+            import json
+            vocab_path = Path(checkpoint_path).parent / "vocab.json"
+            if vocab_path.exists():
+                with open(vocab_path, "r", encoding="utf-8") as f:
+                    vocab_data = json.load(f)
+                    if "idx_to_char" in vocab_data:
+                        self.idx_to_char = {int(k): v for k, v in vocab_data["idx_to_char"].items()}
+                        self.vocab_size = vocab_data.get("vocab_size", len(self.idx_to_char))
+                    else:
+                        self.idx_to_char = {int(v): k for k, v in vocab_data.items()}
+                        self.vocab_size = len(vocab_data)
+            else:
+                # fallback
+                charset = (
+                    "abcdefghijklmnopqrstuvwxyz"
+                    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                    "0123456789 .,;:!?-/()'\"@#%&+=[]{}|\\<>$^*~`_"
+                )
+                self.idx_to_char = {0: "", 1: "", 2: "?"}
+                for i, char in enumerate(charset, start=3):
+                    self.idx_to_char[i] = char
+                self.vocab_size = 95
 
         # ImageNet normalization
         self.mean = np.array([0.485, 0.456, 0.406])
@@ -65,8 +82,29 @@ class MedScriptPredictor:
         """Load model from checkpoint."""
         logger.info("loading_model", checkpoint=str(checkpoint_path))
 
-        # Initialize model
-        self.model = MedScriptModel(use_pretrained=False)
+        # Load config to get the correct architecture params
+        import yaml
+        config_path = Path("configs/model_config.yaml")
+        donut_cfg, bilstm_cfg, bert_cfg = {}, {}, {}
+        if config_path.exists():
+            with open(config_path, "r", encoding="utf-8") as f:
+                cfg = yaml.safe_load(f) or {}
+                donut_cfg = cfg.get("donut", {})
+                bilstm_cfg = cfg.get("bilstm", {})
+                bert_cfg = cfg.get("medical_bert", {})
+
+        # Initialize model with config params
+        self.model = MedScriptModel(
+            pretrained_donut=donut_cfg.get("pretrained_model", "naver-clova-ix/donut-base"),
+            encoder_output_dim=bilstm_cfg.get("input_dim", 1024),
+            bilstm_hidden_size=bilstm_cfg.get("hidden_size", 256),
+            bilstm_num_layers=bilstm_cfg.get("num_layers", 2),
+            bilstm_dropout=bilstm_cfg.get("dropout", 0.3),
+            vocab_size=self.vocab_size,
+            pretrained_bert=bert_cfg.get("pretrained_model", "microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract"),
+            num_ner_labels=bert_cfg.get("num_labels", 11),
+            use_pretrained=False,
+        )
 
         # Load checkpoint
         checkpoint = torch.load(str(checkpoint_path), map_location=self.device)

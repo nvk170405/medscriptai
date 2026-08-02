@@ -51,11 +51,17 @@ class DonutVisionEncoder(nn.Module):
             logger.info("loading_pretrained_donut", model=pretrained_model)
             self.encoder = DonutSwinModel.from_pretrained(pretrained_model)
         else:
-            config = DonutSwinConfig()
+            config = DonutSwinConfig.from_pretrained(pretrained_model)
             self.encoder = DonutSwinModel(config)
 
         # Get hidden dimension from encoder config
         self.hidden_dim = self.encoder.config.hidden_size  # Typically 768 or 1024
+
+        # Enable gradient checkpointing to save massive amounts of VRAM!
+        # This is critical for training at 960x1280 on GPUs with < 24GB VRAM
+        if hasattr(self.encoder, "gradient_checkpointing_enable"):
+            self.encoder.gradient_checkpointing_enable()
+            logger.info("donut_gradient_checkpointing_enabled")
 
         # Projection layer: map encoder features to output_dim
         self.projection = nn.Sequential(
