@@ -57,48 +57,29 @@ async def transcribe_prescription(
     # Run inference
     predictor = request.app.state.predictor
 
-    if predictor is not None:
-        import io
-        import numpy as np
-        from PIL import Image
+    import io
+    from PIL import Image
 
-        # Load image from bytes
-        image = Image.open(io.BytesIO(content)).convert("RGB")
-        result = predictor.predict(image, run_ner=True)
+    # Load image from bytes
+    image = Image.open(io.BytesIO(content)).convert("RGB")
+    result = predictor.predict(image, run_ner=True)
 
-        entities = [
-            Entity(
-                type=e.get("type", "unknown"),
-                value=e.get("value", ""),
-                confidence=round(e.get("confidence", 0.0), 4),
-            )
-            for e in result.entities
-        ]
-
-        response = TranscriptionResponse(
-            transcription=result.transcription,
-            entities=entities,
-            word_confidences=[round(c, 4) for c in result.word_confidences],
-            model_version=result.model_version,
-            needs_review=any(c < 0.5 for c in result.word_confidences),
+    entities = [
+        Entity(
+            type=e.get("type", "unknown"),
+            value=e.get("value", ""),
+            confidence=round(e.get("confidence", 0.0), 4),
         )
-    else:
-        # No model loaded — return mock response for development
-        response = TranscriptionResponse(
-            transcription="Amoxicillin 500mg TID for 7 days | Paracetamol 650mg SOS",
-            entities=[
-                Entity(type="medicine", value="Amoxicillin", confidence=0.94),
-                Entity(type="dosage", value="500mg", confidence=0.91),
-                Entity(type="frequency", value="TID", confidence=0.88),
-                Entity(type="duration", value="7 days", confidence=0.85),
-                Entity(type="medicine", value="Paracetamol", confidence=0.92),
-                Entity(type="dosage", value="650mg", confidence=0.89),
-                Entity(type="frequency", value="SOS", confidence=0.87),
-            ],
-            word_confidences=[0.94, 0.91, 0.88, 0.85, 0.92, 0.89, 0.87],
-            model_version="medscript-ai-v0.1-mock",
-            needs_review=False,
-        )
+        for e in result.entities
+    ]
+
+    response = TranscriptionResponse(
+        transcription=result.transcription,
+        entities=entities,
+        word_confidences=[round(c, 4) for c in result.word_confidences],
+        model_version=result.model_version,
+        needs_review=any(c < 0.5 for c in result.word_confidences),
+    )
 
     # Store result
     result_id = str(uuid.uuid4())

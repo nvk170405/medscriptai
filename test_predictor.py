@@ -1,32 +1,44 @@
+"""Test the EasyOCR + rule-based entity extractor predictor."""
 import sys
-import os
 sys.path.append('src')
 
+from pathlib import Path
 from medscript.inference.predictor import MedScriptPredictor
-from api.core.config import settings
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont
 
-def main():
-    print("Loading predictor...")
-    predictor = MedScriptPredictor(
-        checkpoint_path=settings.model_checkpoint_path,
-        device="cpu"
-    )
-    
-    # Create a dummy image
-    import numpy as np
-    dummy_img = np.random.randint(0, 255, (640, 640, 3), dtype=np.uint8)
-    
-    print("Testing with 640x640 image...")
-    predictor.target_height = 640
-    predictor.target_width = 640
-    res = predictor.predict(dummy_img, run_ner=False)
-    print(f"Transcription (640x640): '{res.transcription}'")
-    
-    print("Testing with 960x1280 image...")
-    predictor.target_height = 960
-    predictor.target_width = 1280
-    res2 = predictor.predict(dummy_img, run_ner=False)
-    print(f"Transcription (960x1280): '{res2.transcription}'")
+print("=== Initializing EasyOCR + Rule-based Entity Extractor ===")
+predictor = MedScriptPredictor(device="cpu")
 
-if __name__ == "__main__":
-    main()
+# Create a test image with clear printed text
+img = Image.new("RGB", (800, 200), color=(255, 255, 255))
+draw = ImageDraw.Draw(img)
+try:
+    font = ImageFont.truetype("arial.ttf", 28)
+except Exception:
+    font = ImageFont.load_default()
+
+draw.text((20, 20), "Amoxicillin 500mg", fill=(0, 0, 0), font=font)
+draw.text((20, 60), "Take 1 tablet TID", fill=(0, 0, 0), font=font)
+draw.text((20, 100), "for 7 days", fill=(0, 0, 0), font=font)
+draw.text((20, 140), "Paracetamol 650mg SOS", fill=(0, 0, 0), font=font)
+
+print("\n=== Running inference on test image ===")
+result = predictor.predict(img, run_ner=True)
+
+print(f"\nTranscription: '{result.transcription}'")
+print(f"Confidence: {sum(result.word_confidences)/len(result.word_confidences):.1%}" if result.word_confidences else "")
+
+print(f"\nEntities found: {len(result.entities)}")
+for e in result.entities:
+    etype = e.get('type', '?')
+    evalue = e.get('value', '?')
+    econf = e.get('confidence', 0)
+    print(f"  {etype:15s} -> {evalue:30s} (conf: {econf:.2f})")
+
+if result.transcription.strip() and result.entities:
+    print("\nSUCCESS - OCR + Entity Extraction working!")
+elif result.transcription.strip():
+    print("\nPARTIAL - OCR working, entities empty")
+else:
+    print("\nFAILURE - no output")

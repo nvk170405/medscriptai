@@ -58,7 +58,6 @@ class Settings(BaseSettings):
     s3_bucket_name: str = "medscript-data"
 
     # Model
-    model_checkpoint_path: str = "checkpoints/best.ckpt"
     model_device: str = "cpu"
 
     # CORS

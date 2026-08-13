@@ -1,17 +1,14 @@
-"""Inference predictor — loads trained model and runs prediction on images."""
+"""Inference predictor — uses EasyOCR + BiomedBERT NER for prescription analysis."""
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
 
-import cv2
 import numpy as np
-import torch
 from PIL import Image
 
-from medscript.data.preprocessing import preprocess_image
-from medscript.models.medscript_model import MedScriptModel, TranscriptionResult
+from medscript.models.medscript_model import TranscriptionResult
 from medscript.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -21,156 +18,50 @@ class MedScriptPredictor:
     """
     Production inference predictor.
 
-    Loads a trained model checkpoint and provides a simple predict() API
-    for transcribing prescription images.
+    Uses EasyOCR (pre-trained) for text extraction and BiomedBERT NER
+    for structured entity extraction. No custom training required.
+
+    Pipeline:
+        Image → EasyOCR → raw text → BiomedBERT NER → structured entities
     """
 
     def __init__(
         self,
-        checkpoint_path: str | Path | None = None,
         device: str = "cpu",
-        idx_to_char: dict[int, str] | None = None,
-        target_height: int = 960,
-        target_width: int = 1280,
-        confidence_threshold: float = 0.5,
+        languages: list[str] | None = None,
+        confidence_threshold: float = 0.3,
+        **kwargs: Any,
     ) -> None:
-        self.device = torch.device(device)
-        self.target_height = target_height
-        self.target_width = target_width
+        self.device = device
         self.confidence_threshold = confidence_threshold
+        self._languages = languages or ["en"]
 
-        # Character mapping
-        self.idx_to_char = {}
-        self.vocab_size = 95
-        if idx_to_char is not None:
-            self.idx_to_char = idx_to_char
-            self.vocab_size = len(idx_to_char)
-        elif checkpoint_path:
-            import json
-            vocab_path = Path(checkpoint_path).parent / "vocab.json"
-            if vocab_path.exists():
-                with open(vocab_path, "r", encoding="utf-8") as f:
-                    vocab_data = json.load(f)
-                    if "idx_to_char" in vocab_data:
-                        self.idx_to_char = {int(k): v for k, v in vocab_data["idx_to_char"].items()}
-                        self.vocab_size = vocab_data.get("vocab_size", len(self.idx_to_char))
-                    else:
-                        self.idx_to_char = {int(v): k for k, v in vocab_data.items()}
-                        self.vocab_size = len(vocab_data)
-            else:
-                # fallback
-                charset = (
-                    "abcdefghijklmnopqrstuvwxyz"
-                    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-                    "0123456789 .,;:!?-/()'\"@#%&+=[]{}|\\<>$^*~`_"
-                )
-                self.idx_to_char = {0: "", 1: "", 2: "?"}
-                for i, char in enumerate(charset, start=3):
-                    self.idx_to_char[i] = char
-                self.vocab_size = 95
+        # Initialize EasyOCR reader
+        self._reader = None
+        self._ner = None
 
-        # ImageNet normalization
-        self.mean = np.array([0.485, 0.456, 0.406])
-        self.std = np.array([0.229, 0.224, 0.225])
+        self._init_ocr()
+        self._init_ner()
 
-        # Load model
-        self.model: MedScriptModel | None = None
-        if checkpoint_path:
-            self.load_model(checkpoint_path)
+    def _init_ocr(self) -> None:
+        """Initialize EasyOCR reader."""
+        import easyocr
 
-    def load_model(self, checkpoint_path: str | Path) -> None:
-        """Load model from checkpoint."""
-        logger.info("loading_model", checkpoint=str(checkpoint_path))
-
-        # Load config to get the correct architecture params
-        import yaml
-        config_path = Path("configs/model_config.yaml")
-        donut_cfg, bilstm_cfg, bert_cfg = {}, {}, {}
-        if config_path.exists():
-            with open(config_path, "r", encoding="utf-8") as f:
-                cfg = yaml.safe_load(f) or {}
-                donut_cfg = cfg.get("donut", {})
-                bilstm_cfg = cfg.get("bilstm", {})
-                bert_cfg = cfg.get("medical_bert", {})
-
-        # Initialize model with config params
-        self.model = MedScriptModel(
-            pretrained_donut=donut_cfg.get("pretrained_model", "naver-clova-ix/donut-base"),
-            encoder_output_dim=bilstm_cfg.get("input_dim", 1024),
-            bilstm_hidden_size=bilstm_cfg.get("hidden_size", 256),
-            bilstm_num_layers=bilstm_cfg.get("num_layers", 2),
-            bilstm_dropout=bilstm_cfg.get("dropout", 0.3),
-            vocab_size=self.vocab_size,
-            pretrained_bert=bert_cfg.get("pretrained_model", "microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract"),
-            num_ner_labels=bert_cfg.get("num_labels", 11),
-            use_pretrained=False,
+        gpu = self.device != "cpu"
+        logger.info("initializing_easyocr", languages=self._languages, gpu=gpu)
+        self._reader = easyocr.Reader(
+            self._languages,
+            gpu=gpu,
+            verbose=False,
         )
+        logger.info("easyocr_ready")
 
-        # Load checkpoint
-        checkpoint = torch.load(str(checkpoint_path), map_location=self.device)
+    def _init_ner(self) -> None:
+        """Initialize rule-based entity extractor."""
+        from medscript.inference.entity_extractor import extract_entities
 
-        if "state_dict" in checkpoint:
-            # Lightning checkpoint
-            state_dict = {
-                k.replace("model.", "", 1): v
-                for k, v in checkpoint["state_dict"].items()
-                if k.startswith("model.")
-            }
-            self.model.load_state_dict(state_dict, strict=False)
-        else:
-            self.model.load_state_dict(checkpoint, strict=False)
-
-        self.model.to(self.device)
-        self.model.eval()
-        logger.info("model_loaded")
-
-        # Warmup
-        self._warmup()
-
-    def _warmup(self) -> None:
-        """Run a warmup inference to initialize CUDA kernels."""
-        if self.model is None:
-            return
-        dummy = torch.randn(1, 3, self.target_height, self.target_width).to(self.device)
-        with torch.no_grad():
-            _ = self.model.forward_encoder_decoder(dummy)
-        logger.info("model_warmup_complete")
-
-    def _preprocess(self, image: np.ndarray | Image.Image | str | Path) -> torch.Tensor:
-        """Preprocess image for model input."""
-        # Load image
-        if isinstance(image, (str, Path)):
-            image_np = cv2.imread(str(image))
-            if image_np is None:
-                raise FileNotFoundError(f"Could not load image: {image}")
-            image_np = cv2.cvtColor(image_np, cv2.COLOR_BGR2RGB)
-        elif isinstance(image, Image.Image):
-            image_np = np.array(image.convert("RGB"))
-        elif isinstance(image, np.ndarray):
-            if len(image.shape) == 3 and image.shape[2] == 4:  # RGBA
-                image_np = cv2.cvtColor(image, cv2.COLOR_RGBA2RGB)
-            elif len(image.shape) == 3 and image.shape[2] == 3:
-                image_np = image
-            else:
-                image_np = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
-        else:
-            raise TypeError(f"Unsupported image type: {type(image)}")
-
-        # Preprocess (deskew, enhance, resize)
-        processed = preprocess_image(
-            cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR),
-            target_height=self.target_height,
-            target_width=self.target_width,
-        )
-        processed = cv2.cvtColor(processed, cv2.COLOR_BGR2RGB)
-
-        # Normalize
-        normalized = processed.astype(np.float32) / 255.0
-        normalized = (normalized - self.mean) / self.std
-
-        # To tensor (H, W, C) → (1, C, H, W)
-        tensor = torch.from_numpy(normalized).float().permute(2, 0, 1).unsqueeze(0)
-        return tensor.to(self.device)
+        self._extract_entities = extract_entities
+        logger.info("entity_extractor_ready", engine="rule-based")
 
     def predict(
         self,
@@ -187,32 +78,47 @@ class MedScriptPredictor:
         Returns:
             TranscriptionResult with transcription, entities, and confidences
         """
-        if self.model is None:
-            raise RuntimeError("No model loaded. Call load_model() first.")
+        if self._reader is None:
+            raise RuntimeError("EasyOCR not initialized.")
 
-        # Preprocess
-        pixel_values = self._preprocess(image)
+        # Convert image to numpy array for EasyOCR
+        image_input = self._prepare_image(image)
 
-        # Inference
-        results = self.model.transcribe(
-            pixel_values,
-            idx_to_char=self.idx_to_char,
-            run_ner=run_ner,
+        # Run EasyOCR
+        logger.info("running_easyocr_inference")
+        ocr_results = self._reader.readtext(image_input)
+
+        # Parse OCR results
+        text_parts: list[str] = []
+        confidences: list[float] = []
+
+        for bbox, text, conf in ocr_results:
+            if conf >= self.confidence_threshold:
+                text_parts.append(text)
+                confidences.append(float(conf))
+
+        transcription = " ".join(text_parts)
+        logger.info(
+            "ocr_complete",
+            text_length=len(transcription),
+            num_segments=len(text_parts),
         )
 
-        result = results[0]
+        # Build result
+        result = TranscriptionResult(
+            transcription=transcription,
+            word_confidences=confidences,
+            model_version="medscript-ai-v0.2-easyocr",
+        )
 
-        # Flag low-confidence words
-        if result.word_confidences:
-            low_confidence_count = sum(
-                1 for c in result.word_confidences if c < self.confidence_threshold
-            )
-            if low_confidence_count > 0:
-                logger.info(
-                    "low_confidence_words",
-                    count=low_confidence_count,
-                    threshold=self.confidence_threshold,
-                )
+        # Run entity extraction
+        if run_ner and hasattr(self, '_extract_entities') and transcription.strip():
+            try:
+                entities = self._extract_entities(transcription)
+                result.entities = entities
+                logger.info("ner_complete", num_entities=len(entities))
+            except Exception as e:
+                logger.warning("entity_extraction_failed", error=str(e))
 
         return result
 
@@ -222,8 +128,21 @@ class MedScriptPredictor:
         run_ner: bool = True,
     ) -> list[TranscriptionResult]:
         """Predict on a batch of images."""
-        results = []
-        for img in images:
-            result = self.predict(img, run_ner=run_ner)
-            results.append(result)
-        return results
+        return [self.predict(img, run_ner=run_ner) for img in images]
+
+    @staticmethod
+    def _prepare_image(image: np.ndarray | Image.Image | str | Path) -> np.ndarray:
+        """Convert any image input to a numpy array for EasyOCR."""
+        import cv2
+
+        if isinstance(image, (str, Path)):
+            img = cv2.imread(str(image))
+            if img is None:
+                raise FileNotFoundError(f"Could not load image: {image}")
+            return img
+        elif isinstance(image, Image.Image):
+            return np.array(image.convert("RGB"))
+        elif isinstance(image, np.ndarray):
+            return image
+        else:
+            raise TypeError(f"Unsupported image type: {type(image)}")

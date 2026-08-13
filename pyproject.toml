@@ -31,11 +31,12 @@ dependencies = [
     "datasets>=2.19.0",
     "safetensors>=0.4.0",
 
-    # Computer Vision
+    # Computer Vision & OCR
     "opencv-python-headless>=4.9.0",
     "albumentations>=1.4.0",
     "kornia>=0.7.0",
     "Pillow>=10.3.0",
+    "easyocr>=1.7",
 
     # NLP
     "nltk>=3.8.0",

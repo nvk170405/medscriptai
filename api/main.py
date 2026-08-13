@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
@@ -28,22 +27,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger = get_logger("api")
     logger.info("starting_medscript_api", version=settings.app_version)
 
-    # Load ML model (if checkpoint exists)
-    if os.path.exists(settings.model_checkpoint_path):
-        from medscript.inference.predictor import MedScriptPredictor
+    # Load ML models (EasyOCR + BiomedBERT NER)
+    from medscript.inference.predictor import MedScriptPredictor
 
-        app.state.predictor = MedScriptPredictor(
-            checkpoint_path=settings.model_checkpoint_path,
-            device=settings.model_device,
-        )
-        logger.info("model_loaded", checkpoint=settings.model_checkpoint_path)
-    else:
-        app.state.predictor = None
-        logger.warning(
-            "no_model_checkpoint",
-            path=settings.model_checkpoint_path,
-            message="API will start without ML model. Upload/transcription will return mock results.",
-        )
+    app.state.predictor = MedScriptPredictor(
+        device=settings.model_device,
+    )
+    logger.info("predictor_ready", engine="easyocr+biomedbert")
 
     yield
 
